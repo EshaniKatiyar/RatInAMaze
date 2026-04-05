@@ -226,10 +226,14 @@ export default function Page() {
 
   // Cell size based on viewport
   const [cellSize, setCellSize] = useState(26)
+  const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
     function calc() {
-      const vw = window.innerWidth - 280 - 40
-      const vh = window.innerHeight - 120
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      const sidebarW = mobile ? 0 : 280
+      const vw = window.innerWidth - sidebarW - 24
+      const vh = mobile ? window.innerHeight * 0.55 : window.innerHeight - 120
       const cs = Math.max(CELL_MIN, Math.min(CELL_MAX, Math.min(Math.floor(vw/cols), Math.floor(vh/rows))))
       setCellSize(cs)
     }
@@ -240,8 +244,10 @@ export default function Page() {
 
   // Recalculate cell size when rows/cols change
   useEffect(() => {
-    const vw = window.innerWidth - 280 - 40
-    const vh = window.innerHeight - 120
+    const mobile = window.innerWidth < 768
+    const sidebarW = mobile ? 0 : 280
+    const vw = window.innerWidth - sidebarW - 24
+    const vh = mobile ? window.innerHeight * 0.55 : window.innerHeight - 120
     setCellSize(Math.max(CELL_MIN, Math.min(CELL_MAX, Math.min(Math.floor(vw/cols), Math.floor(vh/rows)))))
   }, [rows, cols])
 
@@ -386,15 +392,27 @@ export default function Page() {
   const handleMouseUp   = ()            => { isDrawing.current = false; lastDrawn.current = -1 }
   const handleMouseOver = (idx: number) => { if (isDrawing.current) paintCell(idx) }
 
+  const getTouchIdx = (e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+    const idxStr = el?.getAttribute('data-idx')
+    return idxStr !== null && idxStr !== undefined ? parseInt(idxStr) : -1
+  }
+  const handleTouchStart = (e: React.TouchEvent) => { e.preventDefault(); isDrawing.current = true; lastDrawn.current = -1; const i = getTouchIdx(e); if (i >= 0) paintCell(i) }
+  const handleTouchMove  = (e: React.TouchEvent) => { e.preventDefault(); const i = getTouchIdx(e); if (i >= 0) paintCell(i) }
+  const handleTouchEnd   = ()                     => { isDrawing.current = false; lastDrawn.current = -1 }
+
   const pathSet = path
 
   return (
-    <div style={{ display:'flex', height:'100vh', overflow:'hidden', background:'var(--bg)', userSelect:'none' }}>
+    <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', height:'100vh', overflow: isMobile ? 'auto' : 'hidden', background:'var(--bg)', userSelect:'none' }}>
 
       {/* ── Side panel ── */}
       <aside style={{
-        width: 264, flexShrink: 0, background: 'var(--panel)',
-        borderRight: '1px solid var(--border)', display:'flex', flexDirection:'column',
+        width: isMobile ? '100%' : 264, flexShrink: 0, background: 'var(--panel)',
+        borderRight: isMobile ? 'none' : '1px solid var(--border)',
+        borderBottom: isMobile ? '1px solid var(--border)' : 'none',
+        display:'flex', flexDirection:'column',
         overflow:'hidden'
       }}>
         {/* Header */}
@@ -410,7 +428,7 @@ export default function Page() {
           </p>
         </div>
 
-        <div style={{ flex:1, overflow:'auto', padding:'14px 14px 0' }}>
+        <div style={{ flex:1, overflow: isMobile ? 'auto' : 'auto', padding:'14px 14px 0', display: isMobile ? 'flex' : 'block', flexWrap: isMobile ? 'wrap' : undefined, gap: isMobile ? '0 16px' : undefined }}>
 
           {/* Algorithms */}
           <Section label="ALGORITHM">
@@ -539,7 +557,7 @@ export default function Page() {
       </aside>
 
       {/* ── Grid area ── */}
-      <main style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative' }}>
+      <main style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative', minHeight: isMobile ? '55vh' : undefined }}>
         {/* Background texture */}
         <div style={{ position:'absolute', inset:0, opacity:0.03,
           backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px),repeating-linear-gradient(90deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px)'
@@ -548,7 +566,10 @@ export default function Page() {
         <div
           onMouseLeave={handleMouseUp}
           onContextMenu={e => { e.preventDefault(); isDrawing.current = true; setDrawMode('erase') }}
-          style={{ position:'relative' }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{ position:'relative', touchAction:'none' }}
         >
           {/* Stone border */}
           <div style={{ padding:4, background:'linear-gradient(135deg,#3d2e1c,#28200e)', borderRadius:10, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}>
@@ -570,6 +591,7 @@ export default function Page() {
                 return (
                   <div
                     key={idx}
+                    data-idx={idx}
                     onMouseDown={() => handleMouseDown(idx)}
                     onMouseOver={() => handleMouseOver(idx)}
                     onMouseUp={handleMouseUp}
