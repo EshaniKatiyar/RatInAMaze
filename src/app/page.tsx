@@ -199,11 +199,14 @@ function StatsModal({ stats, algo, onClose }: {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Page() {
-  const [rows, setRows] = useState(18)
-  const [cols, setCols] = useState(30)
-  const [cells, setCells] = useState<CellType[]>(() => Array(18 * 30).fill('empty'))
-  const [startIdx, setStartIdx] = useState(() => Math.floor(18/2) * 30 + 2)
-  const [endIdx,   setEndIdx]   = useState(() => Math.floor(18/2) * 30 + 27)
+  const initMobile = typeof window !== 'undefined' && window.innerWidth < 768
+  const initRows = initMobile ? 12 : 18
+  const initCols = initMobile ? 18 : 30
+  const [rows, setRows] = useState(initRows)
+  const [cols, setCols] = useState(initCols)
+  const [cells, setCells] = useState<CellType[]>(() => Array(initRows * initCols).fill('empty'))
+  const [startIdx, setStartIdx] = useState(() => Math.floor(initRows/2) * initCols + 2)
+  const [endIdx,   setEndIdx]   = useState(() => Math.floor(initRows/2) * initCols + initCols - 3)
 
   const [algoIdx,   setAlgoIdx]   = useState(0)
   const [speedIdx,  setSpeedIdx]  = useState(1)
@@ -404,45 +407,205 @@ export default function Page() {
 
   const pathSet = path
 
-  return (
-    <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', height:'100vh', overflow: isMobile ? 'auto' : 'hidden', background:'var(--bg)', userSelect:'none' }}>
+  // ── The grid canvas (shared between mobile and desktop) ──
+  const gridCanvas = (
+    <div
+      onMouseLeave={handleMouseUp}
+      onContextMenu={e => { e.preventDefault(); isDrawing.current = true; setDrawMode('erase') }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{ position:'relative', touchAction:'none' }}
+    >
+      <div style={{ padding:4, background:'linear-gradient(135deg,#3d2e1c,#28200e)', borderRadius:10, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}>
+        <div style={{
+          display:'grid',
+          gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
+          gap:1, background:'#0a0804', borderRadius:6, overflow:'hidden'
+        }} onMouseUp={handleMouseUp}>
+          {cells.map((type, idx) => {
+            const isStart = idx === startIdx
+            const isEnd   = idx === endIdx
+            const style = getCellStyle(idx, type, visited, frontier, pathSet, startIdx, endIdx)
+            return (
+              <div
+                key={idx}
+                data-idx={idx}
+                onMouseDown={() => handleMouseDown(idx)}
+                onMouseOver={() => handleMouseOver(idx)}
+                onMouseUp={handleMouseUp}
+                style={{ width:cellSize, height:cellSize, display:'flex', alignItems:'center', justifyContent:'center', cursor:'crosshair', transition: type==='wall'?'none':'background 0.08s', ...style }}
+              >
+                {isStart && <RatIcon size={Math.max(10, cellSize - 6)}/>}
+                {isEnd   && <CheeseIcon size={Math.max(10, cellSize - 6)}/>}
+                {!isStart && !isEnd && type==='weight' && <MossIcon size={Math.max(8, cellSize - 8)}/>}
+                {!isStart && !isEnd && pathSet.has(idx) && (
+                  <div style={{ width:Math.max(3,cellSize/5), height:Math.max(3,cellSize/5), borderRadius:'50%', background:'#f0d040', boxShadow:'0 0 4px #f0d040' }}/>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
 
-      {/* ── Side panel ── */}
-      <aside style={{
-        width: isMobile ? '100%' : 264, flexShrink: 0, background: 'var(--panel)',
-        borderRight: isMobile ? 'none' : '1px solid var(--border)',
-        borderBottom: isMobile ? '1px solid var(--border)' : 'none',
-        display:'flex', flexDirection:'column',
-        overflow:'hidden'
-      }}>
-        {/* Header */}
+  if (isMobile) {
+    // ── MOBILE LAYOUT: grid top, controls bottom ──
+    return (
+      <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:'var(--bg)', userSelect:'none', overflow:'hidden' }}>
+
+        {/* Compact header */}
+        <div style={{ padding:'8px 14px 6px', borderBottom:'1px solid var(--border)', background:'var(--panel)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <RatIcon size={20}/><CheeseIcon size={20}/>
+            <span style={{ fontFamily:'var(--font-display)', fontSize:16, color:'var(--accent)' }}>Rat in a Maze</span>
+          </div>
+          <div style={{ fontSize:10, color: status.includes('found') && !status.includes('No') ? '#3aad4e' : status.includes('No path') ? '#c84030' : status.includes('Running') ? 'var(--accent)' : 'var(--text3)', maxWidth:140, textAlign:'right', lineHeight:1.3 }}>
+            {status}
+          </div>
+        </div>
+
+        {/* Grid — takes remaining space above controls */}
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative', padding:'8px 4px' }}>
+          <div style={{ position:'absolute', inset:0, opacity:0.03, backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px),repeating-linear-gradient(90deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px)'}}/>
+          {gridCanvas}
+        </div>
+
+        {/* Bottom controls panel */}
+        <div style={{ flexShrink:0, background:'var(--panel)', borderTop:'1px solid var(--border)', padding:'10px 12px 12px', overflow:'auto', maxHeight:'42vh' }}>
+
+          {/* Run + quick actions row */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr auto auto auto', gap:6, marginBottom:10 }}>
+            <button onClick={runAlgo} disabled={animating} style={{
+              padding:'10px 8px', borderRadius:8,
+              background: animating ? '#2a1e08' : 'var(--accent)',
+              color: animating ? 'var(--text3)' : '#000',
+              fontWeight:700, fontSize:13, border:'none',
+              opacity: animating ? 0.5 : 1,
+              animation: animating ? 'pulse 1.2s infinite' : 'none'
+            }}>
+              {animating ? '⏳ Running...' : '▶ Run'}
+            </button>
+            {([['C','Clear',clearPath],['R','Reset',resetGrid],['M','Maze',randomMaze]] as [string, string, () => void][]).map(([k,l,fn]) => (
+              <button key={k as string} onClick={() => (fn as () => void)()} style={{ ...btnStyle, flexDirection:'column', gap:1, padding:'6px 10px', minWidth:52 }}>
+                <span style={{ fontFamily:'var(--font-mono)', color:'var(--accent)', fontSize:10 }}>[{k}]</span>
+                <span style={{ fontSize:10 }}>{l as string}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Algorithm row */}
+          <div style={{ marginBottom:8 }}>
+            <div style={{ fontSize:9, fontFamily:'var(--font-mono)', letterSpacing:'0.12em', color:'var(--text3)', marginBottom:5 }}>ALGORITHM</div>
+            <div style={{ display:'flex', gap:4 }}>
+              {ALGOS.map((a,i) => (
+                <button key={a.id} onClick={() => setAlgoIdx(i)} style={{
+                  flex:1, padding:'6px 4px', borderRadius:6, fontSize:11,
+                  background: algoIdx===i ? '#2a1e08' : 'transparent',
+                  border: algoIdx===i ? '1px solid var(--border2)' : '1px solid var(--border)',
+                  color: algoIdx===i ? 'var(--accent2)' : 'var(--text2)',
+                  fontWeight: algoIdx===i ? 600 : 400
+                }}>{a.name}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Draw mode row */}
+          <div style={{ marginBottom:8 }}>
+            <div style={{ fontSize:9, fontFamily:'var(--font-mono)', letterSpacing:'0.12em', color:'var(--text3)', marginBottom:5 }}>DRAW MODE</div>
+            <div style={{ display:'flex', gap:4 }}>
+              {([
+                ['wall',   'Wall',   '#3a2c1a', null    ],
+                ['erase',  'Erase',  '#5a2810', null    ],
+                ['weight', 'Moss',   '#1a4010', 'moss'  ],
+                ['start',  'Rat',    '#1a5c38', 'rat'   ],
+                ['end',    'Cheese', '#4a2808', 'cheese'],
+              ] as [DrawMode, string, string, string|null][]).map(([mode, label, bg, icon]) => (
+                <button key={mode} onClick={() => setDrawMode(mode)} style={{
+                  flex:1, padding:'6px 2px', borderRadius:6, fontSize:10,
+                  background: drawMode===mode ? bg : 'transparent',
+                  border: drawMode===mode ? '1px solid var(--border2)' : '1px solid var(--border)',
+                  color: drawMode===mode ? '#fff' : 'var(--text2)',
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:2
+                }}>
+                  <span style={{ width:12, height:12, borderRadius:2, background:bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {icon==='rat' && <RatIcon size={9}/>}
+                    {icon==='cheese' && <CheeseIcon size={9}/>}
+                    {icon==='moss' && <MossIcon size={9}/>}
+                  </span>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Speed + Size row */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <div>
+              <div style={{ fontSize:9, fontFamily:'var(--font-mono)', letterSpacing:'0.12em', color:'var(--text3)', marginBottom:5 }}>SPEED</div>
+              <div style={{ display:'flex', gap:3 }}>
+                {SPEEDS.map((s,i) => (
+                  <button key={s.label} onClick={() => setSpeedIdx(i)} style={{
+                    flex:1, padding:'5px 0', borderRadius:5, fontSize:10,
+                    background: speedIdx===i ? 'var(--accent)' : '#1e1408',
+                    color: speedIdx===i ? '#000' : 'var(--text3)',
+                    border: speedIdx===i ? 'none' : '1px solid var(--border)',
+                    fontWeight: speedIdx===i ? 600 : 400
+                  }}>{s.label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize:9, fontFamily:'var(--font-mono)', letterSpacing:'0.12em', color:'var(--text3)', marginBottom:5 }}>SIZE — {cols}×{rows}</div>
+              <div style={{ display:'flex', gap:4 }}>
+                <button onClick={() => resizeGrid(Math.min(rows+2,36), Math.min(cols+4,56))} style={{ ...btnStyle, flex:1, fontSize:11, padding:'5px 4px' }}>+ Big</button>
+                <button onClick={() => resizeGrid(Math.max(rows-2,6), Math.max(cols-4,12))} style={{ ...btnStyle, flex:1, fontSize:11, padding:'5px 4px' }}>− Small</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {showStats && stats && (
+          <StatsModal stats={stats} algo={ALGOS[algoIdx]} onClose={() => setShowStats(false)}/>
+        )}
+        <style>{`
+          @keyframes popIn  { from { opacity:0; transform:scale(0.5); } to { opacity:1; transform:scale(1); } }
+          @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+          @keyframes pulse  { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+        `}</style>
+      </div>
+    )
+  }
+
+  // ── DESKTOP LAYOUT ──
+  return (
+    <div style={{ display:'flex', flexDirection:'row', height:'100vh', overflow:'hidden', background:'var(--bg)', userSelect:'none' }}>
+
+      {/* Side panel */}
+      <aside style={{ width:264, flexShrink:0, background:'var(--panel)', borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
         <div style={{ padding:'20px 18px 14px', borderBottom:'1px solid var(--border)' }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, marginBottom:10 }}>
-            <RatIcon size={28}/> <CheeseIcon size={28}/>
+            <RatIcon size={28}/><CheeseIcon size={28}/>
           </div>
           <h1 style={{ fontFamily:'var(--font-display)', fontSize:22, textAlign:'center', color:'var(--accent)', letterSpacing:'0.01em' }}>
             Rat in a Maze
           </h1>
-          <p style={{ fontSize:11, color:'var(--text3)', textAlign:'center', marginTop:3 }}>
-            IAI Pathfinding Visualizer
-          </p>
+          <p style={{ fontSize:11, color:'var(--text3)', textAlign:'center', marginTop:3 }}>IAI Pathfinding Visualizer</p>
         </div>
 
-        <div style={{ flex:1, overflow: isMobile ? 'auto' : 'auto', padding:'14px 14px 0', display: isMobile ? 'flex' : 'block', flexWrap: isMobile ? 'wrap' : undefined, gap: isMobile ? '0 16px' : undefined }}>
-
-          {/* Algorithms */}
+        <div style={{ flex:1, overflow:'auto', padding:'14px 14px 0' }}>
           <Section label="ALGORITHM">
-            {ALGOS.map((a, i) => (
+            {ALGOS.map((a,i) => (
               <button key={a.id} onClick={() => setAlgoIdx(i)} style={{
                 width:'100%', display:'flex', alignItems:'center', gap:8,
                 padding:'7px 10px', borderRadius:8, marginBottom:4,
-                background: algoIdx === i ? '#2a1e08' : 'transparent',
-                border: algoIdx === i ? '1px solid var(--border2)' : '1px solid transparent',
-                color: algoIdx === i ? 'var(--accent2)' : 'var(--text2)',
-                fontSize:13, textAlign:'left', transition:'all 0.15s',
-                position:'relative'
+                background: algoIdx===i ? '#2a1e08' : 'transparent',
+                border: algoIdx===i ? '1px solid var(--border2)' : '1px solid transparent',
+                color: algoIdx===i ? 'var(--accent2)' : 'var(--text2)',
+                fontSize:13, textAlign:'left', transition:'all 0.15s', position:'relative'
               }}>
-                {algoIdx === i && <div style={{ position:'absolute', left:0, top:4, bottom:4, width:3, background:'var(--accent)', borderRadius:'0 2px 2px 0' }}/>}
+                {algoIdx===i && <div style={{ position:'absolute', left:0, top:4, bottom:4, width:3, background:'var(--accent)', borderRadius:'0 2px 2px 0' }}/>}
                 <span style={{ fontFamily:'var(--font-mono)', fontSize:11, opacity:0.5, minWidth:16 }}>{i+1}</span>
                 <span style={{ fontWeight: algoIdx===i ? 500 : 400 }}>{a.name}</span>
                 <span style={{ fontSize:10, opacity:0.4, marginLeft:'auto' }}>[{i+1}]</span>
@@ -450,14 +613,13 @@ export default function Page() {
             ))}
           </Section>
 
-          {/* Draw mode */}
           <Section label="DRAW MODE">
             {([
-              ['wall',   'Wall',           '#3a2c1a', null      ],
-              ['erase',  'Erase',          '#5a2810', null      ],
-              ['weight', `Moss (×${WEIGHT_COST})`, '#1a4010', 'moss'     ],
-              ['start',  'Rat',            '#1a5c38', 'rat'     ],
-              ['end',    'Cheese',         '#4a2808', 'cheese'  ],
+              ['wall',   'Wall',           '#3a2c1a', null    ],
+              ['erase',  'Erase',          '#5a2810', null    ],
+              ['weight', `Moss (×${WEIGHT_COST})`, '#1a4010', 'moss'  ],
+              ['start',  'Rat',            '#1a5c38', 'rat'   ],
+              ['end',    'Cheese',         '#4a2808', 'cheese'],
             ] as [DrawMode, string, string, string|null][]).map(([mode, label, bg, icon]) => (
               <button key={mode} onClick={() => setDrawMode(mode)} style={{
                 width:'100%', display:'flex', alignItems:'center', gap:8,
@@ -468,9 +630,9 @@ export default function Page() {
                 fontSize:13, textAlign:'left', transition:'all 0.15s'
               }}>
                 <span style={{ width:16, height:16, borderRadius:3, background:bg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  {icon === 'rat' && <RatIcon size={12}/>}
-                  {icon === 'cheese' && <CheeseIcon size={12}/>}
-                  {icon === 'moss' && <MossIcon size={12}/>}
+                  {icon==='rat' && <RatIcon size={12}/>}
+                  {icon==='cheese' && <CheeseIcon size={12}/>}
+                  {icon==='moss' && <MossIcon size={12}/>}
                 </span>
                 <span>{label}</span>
                 <span style={{ marginLeft:'auto', fontSize:10, opacity:0.35, fontFamily:'var(--font-mono)' }}>
@@ -480,7 +642,6 @@ export default function Page() {
             ))}
           </Section>
 
-          {/* Speed */}
           <Section label="SPEED">
             <div style={{ display:'flex', gap:4 }}>
               {SPEEDS.map((s,i) => (
@@ -489,14 +650,12 @@ export default function Page() {
                   background: speedIdx===i ? 'var(--accent)' : '#1e1408',
                   color: speedIdx===i ? '#000' : 'var(--text3)',
                   border: speedIdx===i ? 'none' : '1px solid var(--border)',
-                  fontWeight: speedIdx===i ? 600 : 400,
-                  transition:'all 0.15s'
+                  fontWeight: speedIdx===i ? 600 : 400, transition:'all 0.15s'
                 }}>{s.label}</button>
               ))}
             </div>
           </Section>
 
-          {/* Maze size */}
           <Section label={`MAZE SIZE — ${cols}×${rows}`}>
             <div style={{ display:'flex', gap:6 }}>
               <button onClick={() => resizeGrid(Math.min(rows+2,36), Math.min(cols+4,56))} style={btnStyle}>+ Bigger</button>
@@ -504,7 +663,6 @@ export default function Page() {
             </div>
           </Section>
 
-          {/* Actions */}
           <Section label="ACTIONS">
             <button onClick={runAlgo} disabled={animating} style={{
               ...btnStyle, width:'100%', marginBottom:6,
@@ -520,23 +678,22 @@ export default function Page() {
               {([['C','Clear',clearPath],['R','Reset',resetGrid],['M','Maze',randomMaze]] as [string, string, () => void][]).map(([k,l,fn]) => (
                 <button key={k as string} onClick={() => (fn as () => void)()} style={{ ...btnStyle, flexDirection:'column', gap:1, padding:'7px 4px' }}>
                   <span style={{ fontFamily:'var(--font-mono)', color:'var(--accent)', fontSize:11 }}>[{k}]</span>
-                  <span style={{ fontSize:11 }}>{l}</span>
+                  <span style={{ fontSize:11 }}>{l as string}</span>
                 </button>
               ))}
             </div>
           </Section>
 
-          {/* Legend */}
           <Section label="LEGEND">
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 8px' }}>
               {[
-                ['#1a5c38','Rat (start)', 'rat'],
-                ['#4a2808','Cheese (end)', 'cheese'],
-                ['#3a2c1a','Wall', null],
-                ['#1a4010','Moss tile', 'moss'],
-                ['#1e3a6e','Explored', null],
-                ['#c8960a','Path', null],
-              ].map(([col, lbl, icon]) => (
+                ['#1a5c38','Rat (start)','rat'],
+                ['#4a2808','Cheese (end)','cheese'],
+                ['#3a2c1a','Wall',null],
+                ['#1a4010','Moss tile','moss'],
+                ['#1e3a6e','Explored',null],
+                ['#c8960a','Path',null],
+              ].map(([col,lbl,icon]) => (
                 <div key={lbl as string} style={{ display:'flex', alignItems:'center', gap:6 }}>
                   <span style={{ width:14, height:14, borderRadius:3, background:col as string, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                     {icon==='rat' && <RatIcon size={10}/>}
@@ -550,74 +707,17 @@ export default function Page() {
           </Section>
         </div>
 
-        {/* Status */}
         <div style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontSize:11, lineHeight:1.4, color: status.includes('found') && !status.includes('No') ? '#3aad4e' : status.includes('No path') ? '#c84030' : status.includes('Running') ? 'var(--accent)' : 'var(--text3)' }}>
           {status}
         </div>
       </aside>
 
-      {/* ── Grid area ── */}
-      <main style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative', minHeight: isMobile ? '55vh' : undefined }}>
-        {/* Background texture */}
-        <div style={{ position:'absolute', inset:0, opacity:0.03,
-          backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px),repeating-linear-gradient(90deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px)'
-        }}/>
-
-        <div
-          onMouseLeave={handleMouseUp}
-          onContextMenu={e => { e.preventDefault(); isDrawing.current = true; setDrawMode('erase') }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          style={{ position:'relative', touchAction:'none' }}
-        >
-          {/* Stone border */}
-          <div style={{ padding:4, background:'linear-gradient(135deg,#3d2e1c,#28200e)', borderRadius:10, boxShadow:'0 16px 48px rgba(0,0,0,0.6)' }}>
-            <div style={{
-              display:'grid',
-              gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
-              gap:1,
-              background:'#0a0804',
-              borderRadius:6,
-              overflow:'hidden'
-            }}
-              onMouseUp={handleMouseUp}
-            >
-              {cells.map((type, idx) => {
-                const isStart = idx === startIdx
-                const isEnd   = idx === endIdx
-                const style = getCellStyle(idx, type, visited, frontier, pathSet, startIdx, endIdx)
-
-                return (
-                  <div
-                    key={idx}
-                    data-idx={idx}
-                    onMouseDown={() => handleMouseDown(idx)}
-                    onMouseOver={() => handleMouseOver(idx)}
-                    onMouseUp={handleMouseUp}
-                    style={{
-                      width: cellSize, height: cellSize,
-                      display:'flex', alignItems:'center', justifyContent:'center',
-                      cursor: 'crosshair', transition: type === 'wall' ? 'none' : 'background 0.08s',
-                      ...style
-                    }}
-                  >
-                    {isStart && <RatIcon size={Math.max(10, cellSize - 6)}/>}
-                    {isEnd   && <CheeseIcon size={Math.max(10, cellSize - 6)}/>}
-                    {!isStart && !isEnd && type === 'weight' && <MossIcon size={Math.max(8, cellSize - 8)}/>}
-                    {/* Breadcrumb dot on path */}
-                    {!isStart && !isEnd && pathSet.has(idx) && (
-                      <div style={{ width: Math.max(3, cellSize/5), height: Math.max(3, cellSize/5), borderRadius:'50%', background:'#f0d040', boxShadow:'0 0 4px #f0d040' }}/>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
+      {/* Grid area */}
+      <main style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative' }}>
+        <div style={{ position:'absolute', inset:0, opacity:0.03, backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px),repeating-linear-gradient(90deg,transparent,transparent 20px,rgba(255,255,255,0.3) 20px,rgba(255,255,255,0.3) 21px)'}}/>
+        {gridCanvas}
       </main>
 
-      {/* ── Stats modal ── */}
       {showStats && stats && (
         <StatsModal stats={stats} algo={ALGOS[algoIdx]} onClose={() => setShowStats(false)}/>
       )}
