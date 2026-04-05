@@ -1,4 +1,4 @@
-# Rat in a Maze — Pathfinding Visualizer
+# Rat in a Maze - Pathfinding Visualizer
 
 An interactive visualization project that demonstrates how different pathfinding algorithms help a rat navigate through a maze to find cheese. Built using **Next.js**, **TypeScript**, and **React**, this project highlights algorithm behavior through real-time graphical simulation deployed as a web application on Vercel.
 
