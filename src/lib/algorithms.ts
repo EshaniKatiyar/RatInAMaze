@@ -225,7 +225,7 @@ export function runIDAStar(
     let nextBound = Infinity
     const prev = new Map<number, number>()
 
-    function search(node: number, g: number, pathSet: Set<number>): number {
+   const search = (node: number, g: number, pathSet: Set<number>): number => {
       const f = g + h(node)
       if (f > bound) return f
       visited.add(node); expanded++
