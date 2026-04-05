@@ -499,7 +499,7 @@ export default function Page() {
               {animating ? 'Running...' : '▶ Run Algorithm'}
             </button>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:5 }}>
-              {[['C','Clear',clearPath],['R','Reset',resetGrid],['M','Maze',randomMaze]].map(([k,l,fn]) => (
+              {([['C','Clear',clearPath],['R','Reset',resetGrid],['M','Maze',randomMaze]] as [string, string, () => void][]).map(([k,l,fn]) => (
                 <button key={k as string} onClick={() => (fn as () => void)()} style={{ ...btnStyle, flexDirection:'column', gap:1, padding:'7px 4px' }}>
                   <span style={{ fontFamily:'var(--font-mono)', color:'var(--accent)', fontSize:11 }}>[{k}]</span>
                   <span style={{ fontSize:11 }}>{l}</span>
